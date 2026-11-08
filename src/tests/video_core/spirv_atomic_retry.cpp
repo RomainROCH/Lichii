@@ -130,3 +130,44 @@ TEST_CASE("SPIR-V CAS retries use the exchange result as the next expected word"
         }
     }
 }
+
+TEST_CASE("SPIR-V CAS helpers terminate after a bounded retry count",
+          "[video_core][spirv][atomic_retry]") {
+    for (const bool native_half : {true, false}) {
+        for (const bool explicit_shared : {false, true}) {
+            CAPTURE(native_half, explicit_shared);
+            const auto code = EmitAtomicHelpers(native_half, explicit_shared);
+            const auto exchanges = Instructions(code, spv::Op::OpAtomicCompareExchange);
+            const auto ceilings = Instructions(code, spv::Op::OpUGreaterThanEqual);
+            const auto ors = Instructions(code, spv::Op::OpLogicalOr);
+            const auto branches = Instructions(code, spv::Op::OpBranchConditional);
+            const auto constants = Instructions(code, spv::Op::OpConstant);
+
+            // Every emitted exchange, including narrow shared-memory stores, must have an
+            // exit whose branch condition includes a retry-exhaustion comparison.
+            // The direct guest CAS routing is not a loop and is not emitted by this fixture.
+            REQUIRE(exchanges.size() == (explicit_shared ? 9 : 11));
+            const bool has_limit = std::ranges::any_of(constants, [](const auto& value) {
+                return value.size() == 3 && value[2] == 1024;
+            });
+            REQUIRE(has_limit);
+            size_t bounded_exits = 0;
+            for (const auto& condition : ors) {
+                if (condition.size() != 4) {
+                    continue;
+                }
+                const bool reaches_branch = std::ranges::any_of(branches, [&](const auto& branch) {
+                    return !branch.empty() && branch[0] == condition[1];
+                });
+                const bool uses_ceiling = std::ranges::any_of(ceilings, [&](const auto& cmp) {
+                    return cmp.size() == 4 &&
+                           (cmp[1] == condition[2] || cmp[1] == condition[3]);
+                });
+                if (reaches_branch && uses_ceiling) {
+                    bounded_exits++;
+                }
+            }
+            CHECK(bounded_exits == exchanges.size());
+        }
+    }
+}
