@@ -377,6 +377,25 @@ Id CasFunction(EmitContext& ctx, Operation operation, Id value_type) {
     return func;
 }
 
+// Intel's robust out-of-range atomics may never return the expected word. A finite ceiling
+// avoids a permanent GPU hang; successful and ordinarily contended operations are unchanged.
+// Inspired by @fuxau's Intel Arc investigation in NotRexed/Hookshot#548.
+constexpr u32 CAS_RETRY_LIMIT = 1024;
+
+Id CasRetryCounter(EmitContext& ctx) {
+    const Id counter{ctx.AddLocalVariable(
+        ctx.TypePointer(spv::StorageClass::Function, ctx.U32[1]), spv::StorageClass::Function)};
+    ctx.OpStore(counter, ctx.u32_zero_value);
+    return counter;
+}
+
+Id CasFinished(EmitContext& ctx, Id counter, Id success) {
+    const Id attempts{ctx.OpIAdd(ctx.U32[1], ctx.OpLoad(ctx.U32[1], counter), ctx.Const(1U))};
+    ctx.OpStore(counter, attempts);
+    const Id exhausted{ctx.OpUGreaterThanEqual(ctx.U1, attempts, ctx.Const(CAS_RETRY_LIMIT))};
+    return ctx.OpLogicalOr(ctx.U1, success, exhausted);
+}
+
 Id CasLoop(EmitContext& ctx, Operation operation, Id array_pointer, Id element_pointer,
            Id value_type, spv::Scope scope) {
     const bool is_shared{scope == spv::Scope::Workgroup};
@@ -404,6 +423,7 @@ Id CasLoop(EmitContext& ctx, Operation operation, Id array_pointer, Id element_p
     const Id word_pointer{is_struct ? ctx.OpAccessChain(element_pointer, base, zero, index)
                                     : ctx.OpAccessChain(element_pointer, base, index)};
     ctx.OpStore(expected_var, ctx.OpLoad(ctx.U32[1], word_pointer));
+    const Id attempts{CasRetryCounter(ctx)};
     ctx.OpBranch(loop_header);
     ctx.AddLabel(loop_header);
 
@@ -429,7 +449,7 @@ Id CasLoop(EmitContext& ctx, Operation operation, Id array_pointer, Id element_p
                                                     new_word, expected)};
     ctx.OpStore(expected_var, atomic_res);
     const Id success{ctx.OpIEqual(ctx.U1, atomic_res, expected)};
-    ctx.OpBranchConditional(success, merge_block, loop_header);
+    ctx.OpBranchConditional(CasFinished(ctx, attempts, success), merge_block, loop_header);
 
     ctx.AddLabel(merge_block);
     ctx.OpReturnValue(from_word(atomic_res));
@@ -684,6 +704,7 @@ void EmitContext::DefineSharedMemory(const IR::Program& program) {
         const Id count{Const(size)};
         const Id word_pointer{OpAccessChain(shared_u32, shared_memory_u32, word_offset)};
         OpStore(expected_var, OpLoad(U32[1], word_pointer));
+        const Id attempts{CasRetryCounter(*this)};
         OpBranch(loop_header);
 
         AddLabel(loop_header);
@@ -697,7 +718,7 @@ void EmitContext::DefineSharedMemory(const IR::Program& program) {
                                                     u32_zero_value, new_value, old_value)};
         OpStore(expected_var, atomic_res);
         const Id success{OpIEqual(U1, atomic_res, old_value)};
-        OpBranchConditional(success, merge_block, loop_header);
+        OpBranchConditional(CasFinished(*this, attempts, success), merge_block, loop_header);
 
         AddLabel(merge_block);
         OpReturn();
@@ -933,6 +954,7 @@ void EmitContext::DefineWriteStorageCasLoopFunction(const Info& info) {
     const Id expected_var{
         AddLocalVariable(TypePointer(spv::StorageClass::Function, U32[1]), spv::StorageClass::Function)};
     OpStore(expected_var, OpLoad(U32[1], pointer));
+    const Id attempts{CasRetryCounter(*this)};
     const Id scope_device{Const(1u)};
     const Id ordering_relaxed{u32_zero_value};
     const Id body_label{OpLabel()};
@@ -952,7 +974,7 @@ void EmitContext::DefineWriteStorageCasLoopFunction(const Info& info) {
                                                   ordering_relaxed, desired_value, expected_value)};
     OpStore(expected_var, actual_value);
     const Id store_successful{OpIEqual(U1, expected_value, actual_value)};
-    OpBranchConditional(store_successful, endloop_label, continue_label);
+    OpBranchConditional(CasFinished(*this, attempts, store_successful), endloop_label, continue_label);
 
     AddLabel(endloop_label);
     OpReturn();
