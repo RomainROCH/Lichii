@@ -940,13 +940,23 @@ ComputePipeline* PipelineCache::CurrentComputePipeline(u64& native_key) {
     if (is_new) {
         entry = CreateComputePipeline(key, shader);
     } else if (entry.pending) {
-        if (entry.pending->pipeline->IsBuilt()) {
-            LOG_INFO(Render_Vulkan, "Compute shader {:016x}: rebuilt pipeline in use",
-                     key.unique_hash);
-            const auto rebuilt{std::move(entry.pending)};
-            retired_compute_pipelines.emplace_back(scheduler.CurrentTick(),
-                                                   std::move(entry.pipeline));
-            entry = std::move(*rebuilt);
+        // IsBuilt is also signalled when Vulkan rejects a pipeline. Preserve the working
+        // translation in that case, and never destroy a pending pipeline owned by a worker.
+        if (entry.pending->pipeline->IsBuilt() && entry.pending->pipeline->IsBuildTaskDone()) {
+            if (entry.pending->pipeline->HasPipeline()) {
+                LOG_INFO(Render_Vulkan, "Compute shader {:016x}: rebuilt pipeline in use",
+                         key.unique_hash);
+                const auto rebuilt{std::move(entry.pending)};
+                retired_compute_pipelines.emplace_back(scheduler.CurrentTick(),
+                                                       std::move(entry.pipeline));
+                entry = std::move(*rebuilt);
+            } else {
+                LOG_WARNING(Render_Vulkan,
+                            "Keeping compute shader {:016x}: replacement Vulkan pipeline failed",
+                            key.unique_hash);
+                entry.pending.reset();
+                entry.rebuilds = MaxComputeRebuilds;
+            }
         }
     } else if (!entry.null_pointer_slots.empty() && entry.rebuilds < MaxComputeRebuilds &&
                StaleNullPointerSlot(entry)) {
