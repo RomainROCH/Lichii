@@ -149,6 +149,19 @@ struct ImageBase {
     ImageMapId map_view_id{};
 };
 
+// A bad overlap is only an intersection, not proof that one image replaces the other's
+// guest bytes. Check complete containment without overflowing the guest GPU address range.
+[[nodiscard]] inline bool CoversGuestGpuRange(const ImageBase& covering,
+                                               const ImageBase& covered) noexcept {
+    if (covering.address_space != covered.address_space ||
+        covering.channel != covered.channel || covering.gpu_addr > covered.gpu_addr) {
+        return false;
+    }
+    const GPUVAddr delta = covered.gpu_addr - covering.gpu_addr;
+    return delta <= covering.guest_size_bytes &&
+           covered.guest_size_bytes <= covering.guest_size_bytes - delta;
+}
+
 struct ImageMapView {
     explicit ImageMapView(GPUVAddr gpu_addr, VAddr cpu_addr, size_t size, ImageId image_id);
 
