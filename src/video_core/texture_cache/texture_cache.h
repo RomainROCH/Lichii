@@ -275,7 +275,8 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
                 image.overlapping_images, [&](ImageId overlap_id) {
                     const auto& overlap = slot_images[overlap_id];
                     return True(overlap.flags & ImageFlagBits::GpuModified) &&
-                           overlap.modification_tick > image.modification_tick;
+                           overlap.modification_tick > image.modification_tick &&
+                           CoversGuestGpuRange(overlap, image);
                 });
             if (!superseded) {
                 return false;
