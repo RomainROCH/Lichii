@@ -77,3 +77,36 @@ TEST_CASE("Adding an alias raises both images' newest alias tick",
     CHECK(NewestAliasTickHolds(images, a));
     CHECK(NewestAliasTickHolds(images, b));
 }
+
+TEST_CASE("Bad overlap early collection requires full coverage", "[video_core][texture_cache]") {
+    // Overlap relations are not necessarily full replacements: a new render target can cover
+    // only the middle of an older one. Dropping the old GPU image would lose unique bytes.
+    ImageBase old{Info(), 0x1000, 0x1000};
+    old.guest_size_bytes = 0x1000;
+    old.channel = 2;
+    old.address_space = 7;
+
+    ImageBase partial_right{Info(), 0x1800, 0x1800};
+    partial_right.guest_size_bytes = 0x1000;
+    partial_right.channel = 2;
+    partial_right.address_space = 7;
+    CHECK_FALSE(VideoCommon::CoversGuestGpuRange(partial_right, old));
+
+    ImageBase same_start_short{Info(), 0x1000, 0x1000};
+    same_start_short.guest_size_bytes = 0x400;
+    same_start_short.channel = 2;
+    same_start_short.address_space = 7;
+    CHECK_FALSE(VideoCommon::CoversGuestGpuRange(same_start_short, old));
+
+    ImageBase complete{Info(), 0x800, 0x800};
+    complete.guest_size_bytes = 0x2000;
+    complete.channel = 2;
+    complete.address_space = 7;
+    CHECK(VideoCommon::CoversGuestGpuRange(complete, old));
+
+    complete.address_space = 8; // Identical guest VA, different mapping.
+    CHECK_FALSE(VideoCommon::CoversGuestGpuRange(complete, old));
+    complete.address_space = 7;
+    complete.channel = 3;
+    CHECK_FALSE(VideoCommon::CoversGuestGpuRange(complete, old));
+}
