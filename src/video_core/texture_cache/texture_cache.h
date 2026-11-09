@@ -253,6 +253,43 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
             lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
         }
     };
+    // Ocarina of Time's guard house sizes a shadow map by the camera's distance to its light, so
+    // every size change moves the targets packed behind it: ~45 new images a frame, each leaving
+    // a bad overlap behind (up to 97 at one address). The age-based pass above frees 10-40 a
+    // frame after 25-50 frames, and device memory fills. A bad overlap that a newer GPU-written
+    // image covers holds nothing a later read can want, so it goes after 4 unused frames, without
+    // a readback. EDEN_NX2_TC_KEEP_BAD_OVERLAPS=1 restores the age-based path only.
+    static const bool keep_bad_overlaps = std::getenv("EDEN_NX2_TC_KEEP_BAD_OVERLAPS") != nullptr;
+    if (!keep_bad_overlaps && frame_tick > 4) {
+        size_t visits = 512;
+        lru_cache.ForEachItemBelow(frame_tick - 4, [&](ImageId image_id) {
+            if (visits-- == 0) {
+                return true;
+            }
+            auto& image = slot_images[image_id];
+            if (False(image.flags & ImageFlagBits::BadOverlap) ||
+                True(image.flags & ImageFlagBits::IsDecoding)) {
+                return false;
+            }
+            const bool superseded = std::ranges::any_of(
+                image.overlapping_images, [&](ImageId overlap_id) {
+                    const auto& overlap = slot_images[overlap_id];
+                    return True(overlap.flags & ImageFlagBits::GpuModified) &&
+                           overlap.modification_tick > image.modification_tick;
+                });
+            if (!superseded) {
+                return false;
+            }
+            MarkStale(image); // before UntrackImage (see MarkStale)
+            if (True(image.flags & ImageFlagBits::Tracked)) {
+                UntrackImage(image, image_id);
+            }
+            ++gc_deletes;
+            UnregisterImage(image_id);
+            DeleteImage(image_id, image.scale_tick > frame_tick + 5);
+            return false;
+        });
+    }
     Configure(false);
     static const u64 old_age = [] {
         const char* value = std::getenv("EDEN_NX2_TC_OLD_AGE");
