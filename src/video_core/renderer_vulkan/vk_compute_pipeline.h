@@ -95,6 +95,11 @@ public:
         return is_built.load(std::memory_order::acquire);
     }
 
+    /// IsBuilt also becomes true when the driver rejects pipeline creation. Call after IsBuilt.
+    [[nodiscard]] bool HasPipeline() const noexcept {
+        return static_cast<bool>(pipeline);
+    }
+
     /// Whether no build of this pipeline is left queued on a worker thread, which holds it
     [[nodiscard]] bool IsBuildTaskDone() const noexcept {
         return build_task_done.load(std::memory_order::acquire);
