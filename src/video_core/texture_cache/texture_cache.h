@@ -2425,7 +2425,7 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::TextureUpload};
 
     image.flags &= ~ImageFlagBits::CpuModified;
-    image.storage_written_levels = 0;
+    image.InvalidateGpuWriteHistoryOnCpuUpload();
 
     // Images uploaded by layer stay tracked while some of their layers are dirty.
     if (False(image.flags & ImageFlagBits::Tracked)) {
