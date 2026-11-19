@@ -46,7 +46,7 @@ VkResult VKAPI_CALL FakeEnumerate(VkInstance, u32* count, VkPhysicalDevice* devi
     ++state.fill_calls;
     devices[0] = FakePhysicalDevice(1);
     if (state.scenario == EnumerationCase::GrowOnce && state.fill_calls == 1) {
-        *count = 2; // A second adapter appeared after the first count.
+        *count = 1; // Vulkan reports the one handle written, not the total now available.
         return VK_INCOMPLETE;
     }
     if (state.scenario == EnumerationCase::AlwaysIncomplete) {
