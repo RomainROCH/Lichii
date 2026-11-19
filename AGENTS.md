@@ -1,10 +1,11 @@
-# AGENTS
+# Lichii — repository instructions
 
+## Context
+
+Lichii is a fork of [Eglantine](https://github.com/Djihads80/Eglantine).
 See `docs/Coding.md` for technical coding guidance.
 
-Keep comments to a reasonable level. Do not overexplain or add/remove comments from unrelated parts of the codebase.
-
-## Game bug reports
+### Game bug reports
 
 Users report game bugs with Lichii logs (`eden_log.txt`, `eden_log.txt.old`). Each `Booting game: <program id>` line starts a session; the build is on the first line (`Lichii Version: ... | nx2-<sha>`). Known program ids:
 
@@ -31,16 +32,36 @@ Users report game bugs with Lichii logs (`eden_log.txt`, `eden_log.txt.old`). Ea
 
 Add ids here when a report identifies a new game.
 
-## Before writing a fix
+## Project-specific conventions
 
-Lichii is a fork of [Eglantine](https://github.com/Djihads80/Eglantine). Do not guess, and do not rewrite a fix upstream already has.
+Keep comments to a reasonable level. Do not overexplain or add/remove
+comments from unrelated parts of the codebase.
+
+### Before writing a fix
+
+Do not guess, and do not rewrite a fix upstream already has.
 
 1. `git remote add upstream https://github.com/Djihads80/Eglantine.git && git fetch upstream`.
 2. Check `upstream/nx2`, open and closed PRs, unmerged branches, and issues for the game and symptom (`gh pr list -R Djihads80/Eglantine --state all`, `gh issue list -R Djihads80/Eglantine --state all`, `gh pr diff <n>`). Read the diffs, not only the titles.
 3. If nx2 is behind `upstream/nx2`, merge upstream first. Port an existing upstream fix before writing a new one, and cite its PR or commit.
 4. Write a new fix only when nothing upstream addresses the root cause the log shows.
 
-## Live debug server
+### Work allocation
+
+- Assign one independent workstream per game and run independent investigations
+  in parallel when the available tools support it; avoid concurrent writes to
+  the same files.
+- Match the available agent to the task: lightweight upstream/log research,
+  deeper emulation or shader investigation, and independent review of hard fixes.
+- If an investigation stalls, request a fresh review with the logs, hypotheses
+  and attempted checks. Choose another available agent when useful; no specific
+  provider or model is required.
+- The coordinating agent combines the evidence, checks interactions and reviews
+  candidate fixes before integration.
+
+## Verification
+
+### Live debug server
 
 Every debug package on the PC launches with `EDEN_NX2_DEBUG_SERVER=127.0.0.1:6545` (in the env argument of `build-fix.sh`; `EDEN_NX2_DEBUG_DIR=<dir>` moves its dumps). Ask the running game from bash on the PC with native Windows Python; MSYS `python` rejects `C:/` paths.
 
@@ -58,7 +79,7 @@ Methods: `status`, `frame_times` (`seconds`, `refresh_hz`), `screenshot`, `log_t
 - Never start or stop the emulator. If nothing listens, ask the owner to launch the game.
 - Keep sessions light while the owner plays: one request at a time, no capture loops, `sampled` only when you need pass inputs.
 
-## RenderDoc and the live server
+### RenderDoc and the live server
 
 Use both for graphics investigations. The live server provides emulator state, native shader hashes, logs and reversible shader A/B tests. [RenderDoc](https://github.com/baldurk/renderdoc) inspects the translated Vulkan frame: draw and dispatch state, resource contents, pixel history and shader debugging where supported. Prefer it over extending our dumps when it already exposes the missing evidence.
 
@@ -69,7 +90,7 @@ Use both for graphics investigations. The live server provides emulator state, n
 - Capture and replay can alter timing or hide races. Compare with an uncaptured live run before ruling out a synchronization bug. Distinguish measured GPU counters from adapter estimates; use CPU/thread and frame traces for emulator performance.
 - A shader replacement that reduces fog or exposure can be a useful visual comparison, but is not proof of an emulator fix. Trace the original pipeline's first incorrect result before shipping a change. Matching shader arithmetic alone does not validate bindings, synchronization or input data.
 
-## Debugging tools
+### Debugging tools
 
 Use these before guessing. All are off unless the variable is set; pass them as the env argument of `build-fix.sh`. Read them from the log at `*:Info` unless noted.
 
@@ -90,15 +111,7 @@ Use these before guessing. All are off unless the variable is set; pass them as 
 | Driver crash, stall or slow pipeline builds | `EDEN_NX2_PIPELINE_BUILD_TRACE=<file>` | A flushed `BEGIN`/`END` line per driver pipeline build with the pipeline and stage hashes; `END` adds the wall time (`ms=`). The last `BEGIN` without an `END` names the shaders the driver crashed or is stuck on. Times include waiting on other builds, so compare runs from the same cleared driver cache rather than single builds. |
 | Host crash (log just stops) | Windows minidump in `%LOCALAPPDATA%\CrashDumps\lichii.exe.<pid>.dmp` | Read the exception and stack with the `minidump` Python package, then symbolize with `llvm-symbolizer --obj=lichii.exe --inlines --relative-address <offset>` next to the build's `lichii.pdb`. |
 
-## How work is split
-
-- One subagent per game, all running in parallel.
-- Small research (upstream PR and issue surveys, log reading): a cheap model, DeepSeek V4.1 Flash at max reasoning when its endpoint is available.
-- Hard fixes (emulation, shaders, GPU): GPT-6 Astra at high reasoning.
-- When a GPT-6 Astra subagent can't find the cause, switch that subagent to Claude Opus 5.5 at high reasoning.
-- The main thread (Opus) orchestrates and reviews.
-
-## Builds
+### Builds
 
 - Cloud machines build with clang and Ninja for compile and unit-test checks.
 - The build the owner tests runs on the owner's Windows PC (DESKTOP-4UD89UT, Ryzen 9 5900X), built with clang using 12 jobs (`cmake --build <dir> --parallel 12`).
@@ -106,7 +119,23 @@ Use these before guessing. All are off unless the variable is set; pass them as 
 - Every fix gets its own debug build on that PC in `C:\Users\Zortos\.capy\work\lichii-debug\<build>\` and a desktop shortcut `Lichii Debug - <Game> - <fix>` that launches it with the owner's existing user data and keeps the log next to the build, so the owner can run it and send the log back.
 - Bundle a round's candidate fixes into one build behind env switches, so the owner tests one package and A/Bs it live through the debug server instead of one build per idea.
 
-## Toggles and merging
+## Limits
+
+The PC names, paths and toolchains above describe the documented owner-PC
+environment. Confirm they apply to the current checkout and host before
+using them; they do not grant access to another machine. Keep the live
+debugging approvals and capture restrictions above in force.
+
+### Toggles and merging
 
 - Experiment switches (env flags that pick between candidate fixes) never merge to nx2. A proven fix ships as unconditional behaviour, and a disproven one is dropped.
 - Diagnostic tools (frame dump, `EDEN_NX2_REJECT_HASH`, traces, the debug server) stay in nx2, off unless their variable is set.
+
+## Communication
+
+Respond in neutral, natural, precise French without mirroring the user's register.
+Preserve the project's language in code, documentation and UI; honor an explicitly
+requested style in its deliverable. Lead with results, actual checks and material
+limits, with useful depth but no filler, repeated summaries or automatic offers
+to continue. Keep interesting secondary findings to one or two sentences unless
+essential or requested. Brevity must not weaken accuracy or required validation.
