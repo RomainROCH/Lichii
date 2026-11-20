@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// SPDX-FileCopyrightText: Copyright 2020 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <thread>
@@ -70,7 +69,14 @@ void MasterSemaphore::Refresh() {
     u64 counter{};
     do {
         this_tick = gpu_tick.load(std::memory_order_acquire);
-        counter = semaphore.GetCounter();
+        try {
+            counter = semaphore.GetCounter();
+        } catch (const vk::Exception& exception) {
+            if (exception.GetResult() == VK_ERROR_DEVICE_LOST) {
+                device.ReportLoss();
+            }
+            throw;
+        }
         // Unchanged: no store, which would take the cache line from the threads reading it.
         if (counter <= this_tick) {
             return;
@@ -116,7 +122,10 @@ void MasterSemaphore::Wait(u64 tick) {
         while (!semaphore.Wait(tick)) {
         }
     } catch (const vk::Exception& exception) {
-        // The throw ends the process; say why first (a device loss reached nothing else here).
+        if (exception.GetResult() == VK_ERROR_DEVICE_LOST) {
+            device.ReportLoss();
+        }
+        // The throw ends the process; say why first.
         LOG_CRITICAL(Render_Vulkan, "Waiting for GPU tick {} failed: {}", tick, exception.what());
         throw;
     }

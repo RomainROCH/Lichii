@@ -40,6 +40,8 @@ void ForEachRecommendedSetting(Values& settings, Func&& func) {
     entry(settings.precache_shaders, PrecacheShaders::Off);
     entry(settings.use_video_framerate, false);
     entry(settings.mkw_30fps, false);
+    entry(settings.mkw_60fps, false);
+    entry(settings.mkw_60fps_fallback, true);
     entry(settings.mkw_dynamic_fps, false);
     entry(settings.hyrule_dynamic_fps, false);
     entry(settings.hyrule_30fps, false);
@@ -110,6 +112,6 @@ std::vector<RecommendedSettingChange> RestorePreviousSettings(Values& settings);
 std::map<std::string, std::string> ParseRecommendedSettingsBackup(const std::string& backup);
 
 /// Writes values back in the form ParseRecommendedSettingsBackup reads.
-std::string FormatRecommendedSettingsBackup(const std::map<std::string, std::string>& values);
+std::string FormatRecommendedSettingsBackup(const std::map<std::string, std::string>& entries);
 
 } // namespace Settings

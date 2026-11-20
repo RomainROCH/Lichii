@@ -4,7 +4,6 @@
 // SPDX-FileCopyrightText: Copyright 2024 Torzu Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #pragma once
@@ -139,7 +138,11 @@ ENUM(GpuAccuracy, Low, High);
 ENUM(DmaAccuracy, Default, Unsafe, Safe);
 ENUM(GpuFenceBehavior, Default, Immediate, Balanced, Accurate);
 ENUM(NativeComputeWriteMark, Auto, Full);
+#ifdef HAS_HYPERVISOR
+ENUM(CpuBackend, Dynarmic, Nce, Hypervisor);
+#else
 ENUM(CpuBackend, Dynarmic, Nce);
+#endif
 ENUM(CpuAccuracy, Auto, Accurate, Unsafe, Paranoid, Debugging);
 ENUM(CpuClock, Normal, Boost, Overclock)
 ENUM(NativeAsyncDraws, Wait, Bounded, Skip);
@@ -166,6 +169,7 @@ ENUM(GpuUnswizzle, VeryLow, Low, Normal, Medium, High)
 ENUM(GpuUnswizzleChunk, VeryLow, Low, Normal, Medium, High)
 ENUM(TemperatureUnits, Celsius, Fahrenheit)
 ENUM(ExtendedDynamicState, Disabled, EDS1, EDS2, EDS3);
+ENUM(MeshShaderMode, Automatic, Native, Compute);
 ENUM(GpuLogLevel, Off, Errors, Standard, Verbose, All)
 ENUM(GameListMode, TreeView, GridView, CarouselView);
 ENUM(SpeedMode, Standard, Turbo, Slow);
