@@ -48,6 +48,7 @@ int main() {
     if (FormatLogMessage(e) != "formatted") return 1;
     force_oom = true;
     if (!FormatLogMessage(e).empty()) return 2;
+    force_oom = false; // Exercise the null-filename path independently of fault injection.
     e.filename = nullptr;
     if (!FormatLogMessage(e).empty()) return 3;
     std::puts("PASS: normal format, injected bad_alloc, missing filename");
