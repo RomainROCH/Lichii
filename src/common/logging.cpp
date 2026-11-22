@@ -342,7 +342,11 @@ struct RingBackend final : public Backend {
         }
         try {
             std::string text = FormatLogMessage(entry);
-            if (!text.empty() && text.back() == '\n') {
+            // Formatting can return an empty string on OOM. Preserve buffered diagnostics.
+            if (text.empty()) {
+                return;
+            }
+            if (text.back() == '\n') {
                 text.pop_back();
             }
             std::scoped_lock lock{mutex};
